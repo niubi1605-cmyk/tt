@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>本地短链接</title>
+<style>
+  :root {
+    --bg: #fafafa; --card: #ffffff; --text: #1a1a1a; --sub: #777;
+    --border: #e2e2e2; --accent: #2563eb; --danger: #dc2626;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--text); min-height: 100vh;
+    display: flex; align-items: center; justify-content: center;
+    padding: 72px 24px 24px;
+  }
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 32px; width: 100%; max-width: 520px;
+  }
+  h1 { font-size: 20px; font-weight: 650; letter-spacing: -0.01em; margin-bottom: 24px; padding-right: 36px; }
+  label { display: block; font-size: 13px; color: var(--sub); margin-bottom: 6px; margin-top: 16px; }
+  input[type="text"], input[type="url"], input[type="password"] {
+    width: 100%; padding: 10px 12px; border: 1px solid var(--border);
+    border-radius: 8px; font-size: 15px; font-family: inherit;
+    outline: none; transition: border-color .15s;
+  }
+  input:focus { border-color: var(--accent); }
+  .hint { font-size: 12px; color: var(--sub); margin-top: 6px; line-height: 1.5; }
+  .warn {
+    font-size: 12px; color: #b45309; line-height: 1.55;
+    background: #fffbeb; border: 1px solid #fde68a;
+    border-radius: 8px; padding: 10px 12px; margin-top: 8px;
+  }
+  button {
+    width: 100%; margin-top: 24px; padding: 11px;
+    background: var(--text); color: #fff; border: none; border-radius: 8px;
+    font-size: 15px; font-weight: 600; font-family: inherit; cursor: pointer;
+  }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  button.secondary { background: transparent; color: var(--text); border: 1px solid var(--border); }
+  .result { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--border); display: none; }
+  .result.show { display: block; }
+  .result input { background: #f5f5f5; color: var(--sub); font-size: 13px; cursor: text; }
+  .result .len { font-size: 12px; color: var(--sub); margin-top: 8px; }
+  .msg { font-size: 13px; margin-top: 12px; line-height: 1.5; }
+  .msg.ok { color: #16a34a; }
+  .msg.err { color: var(--danger); }
+  .gate { text-align: center; }
+  .gate .countdown { font-size: 56px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--accent); margin: 20px 0; }
+  .gate .countdown.done { font-size: 20px; color: var(--text); }
+  .gate .dest { font-size: 12px; color: var(--sub); word-break: break-all; margin-top: 8px; }
+  .hidden { display: none !important; }
+
+  .menu-wrap { position: fixed; top: 16px; right: 16px; z-index: 100; }
+  .dots {
+    width: 40px; height: 40px; margin: 0; padding: 0;
+    border: 1px solid var(--border); background: var(--card); color: var(--text);
+    border-radius: 50%; font-size: 20px; line-height: 1; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 1px 3px rgba(0,0,0,.06);
+  }
+  .dots:hover { background: #f0f0f0; }
+  .menu-panel {
+    position: absolute; top: 48px; right: 0; width: 330px;
+    max-width: calc(100vw - 32px); background: var(--card);
+    border: 1px solid var(--border); border-radius: 12px;
+    box-shadow: 0 8px 28px rgba(0,0,0,.12); padding: 20px; text-align: left;
+    max-height: calc(100vh - 80px); overflow-y: auto;
+  }
+  .menu-panel h3 {
+    font-size: 13px; font-weight: 650; color: var(--text);
+    margin-bottom: 8px; letter-spacing: .02em;
+  }
+  .menu-panel h3 + p, .menu-panel h3 + ul, .menu-panel h3 + .mode-switch { margin-bottom: 18px; }
+  .menu-panel h3:last-of-type + ul { margin-bottom: 0; }
+  .menu-panel p, .menu-panel li { font-size: 12.5px; color: var(--sub); line-height: 1.65; }
+  .menu-panel ul { list-style: none; }
+  .menu-panel li { margin-bottom: 6px; }
+  .menu-panel li b { color: var(--text); font-weight: 600; }
+  .menu-panel code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px; background: #f0f0f0; padding: 1px 5px;
+    border-radius: 4px; color: var(--text); word-break: break-all;
+  }
+  .mode-switch { display: flex; gap: 6px; }
+  .mode-switch .mode-btn {
+    flex: 1; width: auto; margin: 0; padding: 8px 10px;
+    font-size: 12.5px; font-weight: 500;
+    background: transparent; color: var(--sub);
+    border: 1px solid var(--border); border-radius: 8px; cursor: pointer;
+  }
+  .mode-switch .mode-btn.active {
+    background: var(--text); color: #fff; border-color: var(--text);
+  }
+</style>
+</head>
+<body>
+
+<div class="menu-wrap">
+  <button class="dots" id="dotsBtn" aria-label="菜单" aria-expanded="false">⋯</button>
+  <div class="menu-panel" id="menuPanel" hidden>
+    <h3>模式</h3>
+    <div class="mode-switch">
+      <button class="mode-btn" data-mode="encrypted">加密模式</button>
+      <button class="mode-btn" data-mode="plain">极短模式</button>
+    </div>
+    <h3>网站介绍</h3>
+    <p>所有计算在浏览器本地完成，不上传、不记录、不追踪。加密模式使用 AES-256-GCM 与 PBKDF2，可跨设备分享；极短模式后缀完全自定义，仅在本设备有效。</p>
+    <h3>极短链接</h3>
+    <p>极短模式的链接格式为 <code>你的域名/#后缀</code>。后缀最短 1 个字符，支持中文、英文、数字、符号。整条链接长度 = 域名 + 2 + 后缀长度，这是纯前端无服务器方案能做到的物理极限。</p>
+    <p style="margin-top:8px;">例如域名是 <code>s.co</code>，后缀 <code>a</code>，链接就是 <code>https://s.co/#a</code>。</p>
+    <h3>更新日志</h3>
+    <ul>
+      <li><b>v2.2</b> — 极短模式：去掉 <code>s=</code> 前缀，链接变为 <code>#后缀</code>，后缀最短 1 字符；菜单新增极短链接说明。</li>
+      <li><b>v2.1</b> — 新增未加密模式，自定义后缀，模式切换。</li>
+      <li><b>v2.0</b> — 全站 AES-256-GCM 加密，PBKDF2 高迭代派生，去除第三方依赖。</li>
+      <li><b>v1.0</b> — 初版：本地生成链接、密码门禁、5 秒等待。</li>
+    </ul>
+  </div>
+</div>
+
+<!-- 生成界面 -->
+<div id="createView" class="card">
+  <h1 id="createTitle">本地短链接</h1>
+
+  <div id="encryptedForm">
+    <label for="dest">目标网址</label>
+    <input type="url" id="dest" placeholder="https://example.com/很长的路径..." autocomplete="off">
+    <label for="pwd">访问密码（可选）</label>
+    <input type="password" id="pwd" placeholder="留空则无密码" autocomplete="off">
+    <p class="hint">密码仅用于本地派生密钥，不会上传，也不会写入链接。</p>
+    <button id="genBtn">加密并生成链接</button>
+  </div>
+
+  <div id="plainForm" class="hidden">
+    <label for="destPlain">目标网址</label>
+    <input type="url" id="destPlain" placeholder="https://example.com/很长的路径..." autocomplete="off">
+    <label for="suffix">自定义后缀（越短链接越短）</label>
+    <input type="text" id="suffix" placeholder="例如：a / hi / 我 / 工作" autocomplete="off" maxlength="50">
+    <p class="hint">最短 1 个字符，支持中文、英文、数字、符号。留空自动生成 6 位随机后缀。</p>
+    <p class="warn">⚠️ 极短模式数据保存在当前浏览器本地，链接只能在这台设备打开。跨设备分享请用加密模式。</p>
+    <button id="genPlainBtn">生成极短链接</button>
+  </div>
+
+  <div id="result" class="result">
+    <label>你的链接</label>
+    <input type="text" id="shortUrl" readonly>
+    <p class="len" id="lenInfo"></p>
+    <button class="secondary" id="copyBtn" style="margin-top:10px;">复制链接</button>
+    <p id="resultMsg" class="msg"></p>
+  </div>
+</div>
+
+<!-- 密码门禁 -->
+<div id="gateView" class="card gate hidden">
+  <h1 style="padding-right:0;">受密码保护</h1>
+  <p class="hint">输入密码后解密并继续访问。</p>
+  <input type="password" id="gatePwd" placeholder="请输入密码" style="margin-top:16px;">
+  <button id="unlockBtn">验证</button>
+  <p id="gateMsg" class="msg err"></p>
+</div>
+
+<!-- 5 秒等待 -->
+<div id="waitView" class="card gate hidden">
+  <h1 style="padding-right:0;">请稍候</h1>
+  <div id="countdown" class="countdown">5</div>
+  <p class="hint">即将前往目标页面</p>
+  <p id="destPreview" class="dest"></p>
+</div>
+
+<!-- 未找到 -->
+<div id="notFoundView" class="card hidden">
+  <h1 style="padding-right:0;">未找到此短链接</h1>
+  <p class="hint" style="margin-top:16px;">
+    极短模式的数据保存在生成链接的这台设备/浏览器中。更换设备、浏览器或清除网站数据后，链接将无法解析。
+  </p>
+  <p class="hint" style="margin-top:12px;">
+    如需跨设备分享，请使用右上角菜单切换到「加密模式」。
+  </p>
+  <button class="secondary" id="backHomeBtn" style="margin-top:24px;">回到首页</button>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var PBKDF2_ITER = 600000;
+  var SALT_LEN = 16;
+  var IV_LEN = 12;
+  var WAIT_SECONDS = 5;
+  var MODE_KEY = 'slink:mode';
+  var LINK_PREFIX = 'slink:u:';
+  var MAX_SUFFIX_LEN = 50;
+
+  var createView   = document.getElementById('createView');
+  var gateView     = document.getElementById('gateView');
+  var waitView     = document.getElementById('waitView');
+  var notFoundView = document.getElementById('notFoundView');
+  var createTitle  = document.getElementById('createTitle');
+  var encryptedForm = document.getElementById('encryptedForm');
+  var plainForm    = document.getElementById('plainForm');
+  var destInput    = document.getElementById('dest');
+  var pwdInput     = document.getElementById('pwd');
+  var genBtn       = document.getElementById('genBtn');
+  var destPlain    = document.getElementById('destPlain');
+  var suffixInput  = document.getElementById('suffix');
+  var genPlainBtn  = document.getElementById('genPlainBtn');
+  var resultBox    = document.getElementById('result');
+  var shortUrlIn   = document.getElementById('shortUrl');
+  var lenInfo      = document.getElementById('lenInfo');
+  var copyBtn      = document.getElementById('copyBtn');
+  var resultMsg    = document.getElementById('resultMsg');
+  var gatePwd      = document.getElementById('gatePwd');
+  var unlockBtn    = document.getElementById('unlockBtn');
+  var gateMsg      = document.getElementById('gateMsg');
+  var countdownEl  = document.getElementById('countdown');
+  var destPreview  = document.getElementById('destPreview');
+  var dotsBtn      = document.getElementById('dotsBtn');
+  var menuPanel    = document.getElementById('menuPanel');
+  var backHomeBtn  = document.getElementById('backHomeBtn');
+
+  function b64u(bytes) {
+    var arr = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+    var bin = '';
+    for (var i = 0; i < arr.length; i++) bin += String.fromCharCode(arr[i]);
+    return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+  function fromB64u(str) {
+    str = str.replace(/-/g, '+').replace(/_/g, '/');
+    while (str.length % 4) str += '=';
+    var bin = atob(str);
+    var arr = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    return arr;
+  }
+
+  function deriveKey(password, salt, iterations) {
+    var enc = new TextEncoder().encode(password);
+    return crypto.subtle.importKey('raw', enc, 'PBKDF2', false, ['deriveKey'])
+      .then(function (baseKey) {
+        return crypto.subtle.deriveKey(
+          { name: 'PBKDF2', salt: salt, iterations: iterations, hash: 'SHA-256' },
+          baseKey, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']
+        );
+      });
+  }
+
+  function compressBytes(bytes) {
+    if (typeof CompressionStream === 'undefined') {
+      return Promise.resolve({ data: bytes, compressed: false });
+    }
+    try {
+      var stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream('deflate-raw'));
+      return new Response(stream).arrayBuffer().then(function (buf) {
+        return { data: new Uint8Array(buf), compressed: true };
+      });
+    } catch (e) {
+      return Promise.resolve({ data: bytes, compressed: false });
+    }
+  }
+  function decompressBytes(bytes) {
+    var stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+    return new Response(stream).arrayBuffer().then(function (buf) {
+      return new Uint8Array(buf);
+    });
+  }
+
+  function randomSuffix(len) {
+    var chars = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    var out = '';
+    var arr = crypto.getRandomValues(new Uint8Array(len || 6));
+    for (var i = 0; i < arr.length; i++) out += chars[arr[i] % chars.length];
+    return out;
+  }
+
+  function normalizeUrl(raw) {
+    raw = (raw || '').trim();
+    if (!raw) return null;
+    if (!/^https?:\/\//i.test(raw)) raw = 'https://' + raw;
+    try {
+      var u = new URL(raw);
+      if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+      return u.href;
+    } catch (e) { return null; }
+  }
+
+  async function generateEncryptedLink(dest, password) {
+    var json = JSON.stringify({ u: dest });
+    var data = new TextEncoder().encode(json);
+    var comp = await compressBytes(data);
+    data = comp.data;
+
+    var iv = crypto.getRandomValues(new Uint8Array(IV_LEN));
+    var key, saltOrKey, pwdMode, iterations;
+
+    if (password) {
+      pwdMode = true; iterations = PBKDF2_ITER;
+      var salt = crypto.getRandomValues(new Uint8Array(SALT_LEN));
+      key = await deriveKey(password, salt, iterations);
+      saltOrKey = salt;
+    } else {
+      pwdMode = false; iterations = 0;
+      key = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt']);
+      saltOrKey = new Uint8Array(await crypto.subtle.exportKey('raw', key));
+    }
+
+    var ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv }, key, data));
+    var flags = (pwdMode ? 2 : 0) | (comp.compressed ? 1 : 0);
+    var payload = ['1', String(flags), String(iterations), b64u(saltOrKey), b64u(iv), b64u(ct)].join('.');
+    return location.origin + location.pathname + '#' + payload;
+  }
+
+  async function decryptPayload(payload, password) {
+    var pwdMode = (payload.flags & 2) !== 0;
+    var compressed = (payload.flags & 1) !== 0;
+    var key;
+    if (pwdMode) {
+      if (!password) throw new Error('NEED_PASSWORD');
+      key = await deriveKey(password, payload.saltOrKey, payload.iterations);
+    } else {
+      key = await crypto.subtle.importKey(
+        'raw', payload.saltOrKey, { name: 'AES-GCM', length: 256 }, false, ['decrypt']
+      );
+    }
+    var data;
+    try {
+      data = new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: payload.iv }, key, payload.ct));
+    } catch (e) {
+      throw new Error(pwdMode ? 'WRONG_PASSWORD' : 'TAMPERED');
+    }
+    if (compressed) {
+      try { data = await decompressBytes(data); }
+      catch (e) { throw new Error('TAMPERED'); }
+    }
+    var obj;
+    try { obj = JSON.parse(new TextDecoder().decode(data)); }
+    catch (e) { throw new Error('TAMPERED'); }
+    if (!obj || typeof obj.u !== 'string' || !/^https?:\/\//i.test(obj.u)) {
+      throw new Error('TAMPERED');
+    }
+    return obj.u;
+  }
+
+  function parseEncryptedHash() {
+    var h = location.hash.slice(1);
+    if (!h) return null;
+    // 加密格式：6 段点分，首段为 1，第二三段为纯数字
+    if (!/^1\.\d+\.\d+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(h)) return null;
+    var parts = h.split('.');
+    try {
+      var flags = parseInt(parts[1], 10);
+      var iterations = parseInt(parts[2], 10);
+      if (!(flags >= 0 && flags <= 3)) return null;
+      if ((flags & 2) && (!(iterations > 0) || iterations > 5000000)) return null;
+      return {
+        flags: flags, iterations: iterations,
+        saltOrKey: fromB64u(parts[3]), iv: fromB64u(parts[4]), ct: fromB64u(parts[5])
+      };
+    } catch (e) { return null; }
+  }
+
+  // ===== 极短模式 =====
+  function validateSuffix(s) {
+    if (!s) return '后缀不能为空。';
+    if (s.length > MAX_SUFFIX_LEN) return '后缀不能超过 ' + MAX_SUFFIX_LEN + ' 个字符。';
+    if (s.indexOf('#') !== -1) return '后缀不能包含 # 字符。';
+    if (/\s/.test(s)) return '后缀不能包含空白字符。';
+    return null;
+  }
+
+  async function generatePlainLink(dest, suffix) {
+    var custom = suffix && suffix.trim();
+    if (custom) {
+      var err = validateSuffix(custom);
+      if (err) return { error: err };
+      suffix = custom;
+    } else {
+      suffix = randomSuffix(6);
+      while (localStorage.getItem(LINK_PREFIX + suffix)) suffix = randomSuffix(6);
+    }
+
+    var key = LINK_PREFIX + suffix;
+    var existing = localStorage.getItem(key);
+    if (existing && existing !== dest) {
+      if (!window.confirm('后缀「' + suffix + '」已被使用，继续将覆盖原有目标网址。是否继续？')) {
+        return { cancelled: true };
+      }
+    }
+    try {
+      localStorage.setItem(key, dest);
+    } catch (e) {
+      return { error: '浏览器存储不可用或已满，无法保存映射。' };
+    }
+
+    // 极短格式：#后缀（不 encode，保留中文原样）
+    var link = location.origin + location.pathname + '#' + suffix;
+    return { link: link, suffix: suffix };
+  }
+
+  // ===== 等待跳转 =====
+  function startWait(destUrl) {
+    if (!/^https?:\/\//i.test(destUrl)) return;
+    createView.classList.add('hidden');
+    gateView.classList.add('hidden');
+    notFoundView.classList.add('hidden');
+    waitView.classList.remove('hidden');
+    destPreview.textContent = destUrl;
+
+    var remaining = WAIT_SECONDS;
+    countdownEl.textContent = remaining;
+    countdownEl.classList.remove('done');
+
+    var timer = setInterval(function () {
+      remaining -= 1;
+      if (remaining > 0) {
+        countdownEl.textContent = remaining;
+      } else {
+        clearInterval(timer);
+        countdownEl.textContent = '即将跳转…';
+        countdownEl.classList.add('done');
+        location.replace(destUrl);
+      }
+    }, 1000);
+  }
+
+  // ===== 模式切换 =====
+  var currentMode = 'encrypted';
+  try { currentMode = localStorage.getItem(MODE_KEY) || 'encrypted'; } catch (e) {}
+
+  function setMode(mode) {
+    currentMode = mode;
+    try { localStorage.setItem(MODE_KEY, mode); } catch (e) {}
+    var btns = document.querySelectorAll('.mode-btn');
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].classList.toggle('active', btns[i].getAttribute('data-mode') === mode);
+    }
+    if (mode === 'plain') {
+      encryptedForm.classList.add('hidden');
+      plainForm.classList.remove('hidden');
+      createTitle.textContent = '本地短链接 · 极短模式';
+    } else {
+      encryptedForm.classList.remove('hidden');
+      plainForm.classList.add('hidden');
+      createTitle.textContent = '本地短链接 · 加密模式';
+    }
+    resultBox.classList.remove('show');
+    lenInfo.textContent = '';
+    resultMsg.textContent = '';
+    resultMsg.className = 'msg';
+  }
+
+  function initMenu() {
+    dotsBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var open = menuPanel.hidden;
+      menuPanel.hidden = !open;
+      dotsBtn.setAttribute('aria-expanded', String(open));
+    });
+    document.addEventListener('click', function (e) {
+      if (!menuPanel.hidden && !menuPanel.contains(e.target) && e.target !== dotsBtn) {
+        menuPanel.hidden = true;
+        dotsBtn.setAttribute('aria-expanded', 'false');
+      }
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && !menuPanel.hidden) {
+        menuPanel.hidden = true;
+        dotsBtn.setAttribute('aria-expanded', 'false');
+      }
+    });
+    var btns = document.querySelectorAll('.mode-btn');
+    for (var i = 0; i < btns.length; i++) {
+      (function (btn) {
+        btn.addEventListener('click', function () {
+          setMode(btn.getAttribute('data-mode'));
+        });
+      })(btns[i]);
+    }
+  }
+
+  function showResultMsg(text, kind) {
+    resultMsg.textContent = text;
+    resultMsg.className = 'msg' + (kind ? ' ' + kind : '');
+  }
+  function showResult(link, note, showLen) {
+    shortUrlIn.value = link;
+    resultBox.classList.add('show');
+    showResultMsg(note || '', '');
+    if (showLen) {
+      lenInfo.textContent = '链接长度：' + link.length + ' 字符（域名 ' +
+        (location.origin + location.pathname).length + ' + 后缀 ' +
+        (link.length - (location.origin + location.pathname).length - 1) + '）';
+    } else {
+      lenInfo.textContent = '';
+    }
+    shortUrlIn.select();
+    shortUrlIn.setSelectionRange(0, 99999);
+  }
+
+  function initCopy() {
+    copyBtn.addEventListener('click', function () {
+      shortUrlIn.select();
+      shortUrlIn.setSelectionRange(0, 99999);
+      navigator.clipboard.writeText(shortUrlIn.value).then(function () {
+        showResultMsg('已复制。', 'ok');
+      }).catch(function () {
+        showResultMsg('复制失败，请手动选中复制。', 'err');
+      });
+    });
+  }
+
+  function initEncryptedCreate() {
+    genBtn.addEventListener('click', function () {
+      var dest = normalizeUrl(destInput.value);
+      if (!dest) {
+        resultBox.classList.add('show');
+        showResultMsg('请输入有效的 http/https 网址。', 'err');
+        lenInfo.textContent = '';
+        return;
+      }
+      var pwd = pwdInput.value;
+      genBtn.disabled = true;
+      genBtn.textContent = pwd ? '加密中（约 1–2 秒）…' : '加密中…';
+
+      generateEncryptedLink(dest, pwd).then(function (link) {
+        genBtn.disabled = false;
+        genBtn.textContent = '加密并生成链接';
+        showResult(link, '已生成。加密模式链接自带数据，可跨设备打开。', false);
+      }).catch(function () {
+        genBtn.disabled = false;
+        genBtn.textContent = '加密并生成链接';
+        resultBox.classList.add('show');
+        showResultMsg('生成失败，请重试。', 'err');
+      });
+    });
+  }
+
+  function initPlainCreate() {
+    genPlainBtn.addEventListener('click', function () {
+      var dest = normalizeUrl(destPlain.value);
+      if (!dest) {
+        resultBox.classList.add('show');
+        showResultMsg('请输入有效的 http/https 网址。', 'err');
+        lenInfo.textContent = '';
+        return;
+      }
+      genPlainBtn.disabled = true;
+      genPlainBtn.textContent = '生成中…';
+      generatePlainLink(dest, suffixInput.value).then(function (res) {
+        genPlainBtn.disabled = false;
+        genPlainBtn.textContent = '生成极短链接';
+        if (res.cancelled) return;
+        if (res.error) {
+          resultBox.classList.add('show');
+          showResultMsg(res.error, 'err');
+          lenInfo.textContent = '';
+          return;
+        }
+        showResult(res.link, '已保存到本浏览器。此链接只能在当前设备/浏览器打开。', true);
+      }).catch(function () {
+        genPlainBtn.disabled = false;
+        genPlainBtn.textContent = '生成极短链接';
+        resultBox.classList.add('show');
+        showResultMsg('生成失败，请重试。', 'err');
+      });
+    });
+  }
+
+  function initEncryptedVisit(payload) {
+    createView.classList.add('hidden');
+    var pwdMode = (payload.flags & 2) !== 0;
+
+    if (!pwdMode) {
+      decryptPayload(payload, '').then(function (dest) {
+        startWait(dest);
+      }).catch(function () {
+        showFatal('链接已损坏或被篡改。');
+      });
+      return;
+    }
+
+    gateView.classList.remove('hidden');
+    unlockBtn.addEventListener('click', function () {
+      var input = gatePwd.value;
+      if (!input) { gateMsg.textContent = '请输入密码。'; return; }
+      unlockBtn.disabled = true;
+      unlockBtn.textContent = '解密中…';
+      gateMsg.textContent = '';
+      decryptPayload(payload, input).then(function (dest) {
+        gateView.classList.add('hidden');
+        startWait(dest);
+      }).catch(function (err) {
+        gateMsg.textContent = (err && err.message === 'WRONG_PASSWORD')
+          ? '密码不正确。' : '链接已损坏或被篡改。';
+        unlockBtn.disabled = false;
+        unlockBtn.textContent = '验证';
+        gatePwd.value = '';
+        gatePwd.focus();
+      });
+    });
+    gatePwd.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') unlockBtn.click();
+    });
+  }
+
+  function showFatal(text) {
+    createView.classList.remove('hidden');
+    resultBox.classList.add('show');
+    showResultMsg(text, 'err');
+  }
+
+  function showNotFound() {
+    createView.classList.add('hidden');
+    gateView.classList.add('hidden');
+    waitView.classList.add('hidden');
+    notFoundView.classList.remove('hidden');
+  }
+
+  // ===== 启动 =====
+  function boot() {
+    initMenu();
+    initCopy();
+    initEncryptedCreate();
+    initPlainCreate();
+
+    backHomeBtn.addEventListener('click', function () {
+      try { history.replaceState(null, '', location.origin + location.pathname); }
+      catch (e) { location.hash = ''; }
+      location.reload();
+    });
+
+    var h = location.hash.slice(1);
+
+    // 无 hash：生成界面
+    if (!h) {
+      setMode(currentMode);
+      return;
+    }
+
+    // 加密格式优先
+    var payload = parseEncryptedHash();
+    if (payload) {
+      initEncryptedVisit(payload);
+      return;
+    }
+
+    // 极短模式：hash 即后缀，兼容旧的 s= 前缀
+    var raw = h.indexOf('s=') === 0 ? h.slice(2) : h;
+    var suffix = null;
+    try { suffix = decodeURIComponent(raw); } catch (e) { suffix = null; }
+
+    if (!suffix) {
+      showNotFound();
+      return;
+    }
+
+    var dest = null;
+    try { dest = localStorage.getItem(LINK_PREFIX + suffix); } catch (e) {}
+
+    if (dest && /^https?:\/\//i.test(dest)) {
+      startWait(dest);
+    } else {
+      showNotFound();
+    }
+  }
+
+  boot();
+})();
+</script>
+</body>
+</html>
